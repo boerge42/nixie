@@ -92,9 +92,15 @@ WiFiClient espClient;
 PubSubClient mqtt_client(espClient);
 
 // ezTime & Zeitzone
-#define MY_TIME_ZONE "Europe/Berlin"
+// ...wenn die beiden folgenden Defines gesetzt sind, werden in setup() 
+// jeweils auch die entsprechenden ezTime-Routinen zum Setzen aufgerufen 
+#define EZTIME_NTP_SERVER      "10.1.1.1"
+#define EZTIME_NTP_INTERVAL    3601  //Sekunden; wenn 0, dann kein NTP-Update!
+
+#define MY_TIME_ZONE           "Europe/Berlin"
 Timezone myTZ;
 char my_time_zone[50] = MY_TIME_ZONE;
+
 
 // Helligkeitssensor
 BH1750FVI lux(0x23);
@@ -238,8 +244,9 @@ void nixie_display_date_time()
     sr_data.sr.p3 = 0;
     sr_data.sr.p2 = 1;
     sr_data.sr.p1 = 0;
-    // wenn keine Verbindung zum WLAN, dann letzten Punkt leuchten lassen
-    if (WiFi.status() == WL_CONNECTED) {
+    // wenn keine Verbindung zum WLAN oder ein "geplanter" NTP-Sync ausgeblieben ist,
+    // dann letzten Punkt leuchten lassen
+    if ((WiFi.status() == WL_CONNECTED) && (timeStatus() != timeNeedsSync)) {
         sr_data.sr.p0 = 0;
     } else {
         sr_data.sr.p0 = 1;
@@ -424,6 +431,12 @@ void setup(void)
     Serial.println("");
     
     // Datum/Uhrzeit holen
+    #ifdef EZTIME_NTP_SERVER
+        setInterval(EZTIME_NTP_INTERVAL);
+    #endif
+    #ifdef EZTIME_NTP_INTERVAL
+        setServer(EZTIME_NTP_SERVER);
+    #endif
     waitForSync();
     Serial.println("UTC: " + UTC.dateTime());
     myTZ.setLocation(my_time_zone);
