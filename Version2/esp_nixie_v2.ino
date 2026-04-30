@@ -40,9 +40,7 @@
 *   -> P3 --> wenn time_quality < 2
 *   -> P5 --> wenn time_quality < 3
 * - diverse Werte und Status werden zu einem MQTT-Broker gesendet
-
-
-
+*
 *
 * Steuerung durch MQTT-Nachrichten (Topic siehe Quelltext):
 * ---------------------------------------------------------
@@ -94,8 +92,8 @@ tm tm;                              // Structure tm enthaelt die Zeitinformation
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03" // https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv
 
 // WiFi
-const char *ssid     = "xxxxx";
-const char *password = "yyyyy";
+const char *ssid     = "xxxx";
+const char *password = "yyyy";
 String hostname      = "Nixie";
 
 // MQTT
@@ -185,9 +183,6 @@ uint8_t isMQTTStatus    = 0;
 uint8_t isNixieScroll   = 0;
 float   isLuxValue      = 0;
 int     time_quality    = 0;   // 0 = keine Zeit, 1 = schlecht, 2 = ok, 3 = gut
-
-#define JITTER_MAX_Q3   50
-#define JITTER_MAX_Q2   200
 
 
 // ********************************************************************************
@@ -477,10 +472,10 @@ void update_ntp_quality()
     
     static unsigned long display_counter = 0;
     
-    static boolean ntp_initialized  = false;
-    static time_t  ntp_lastGoodSync = 0;
-    static struct  timeval ntp_lastTv = {0, 0};
-    static float  ntp_jitter       = 0;
+    static boolean ntp_initialized      = false;
+    static time_t ntp_lastGoodSync      = 0;
+    static struct timeval ntp_lastTv    = {0, 0};
+    static float  ntp_jitter            = 0;
 
     // Ist bereits eine realistische Uhrzeit gesetzt? Wenn nein, ist
     // alles egal und raus! 
@@ -508,27 +503,25 @@ void update_ntp_quality()
     // Jitter berechnen (Abweichung vom Ideal 1s; mit Glaettung; exponentieller gleitender Mittelwert)
     ntp_jitter = 0.9 * ntp_jitter + 0.1 * fabs(diff - 1000000); // in Mikrosekunden!
     
-    // Wenn die Zeit um mehr als 20000us "springt", könnte es ein erfolgreicher
-    // NTP-Request gewesen sein
-    if (fabs(diff - 1000000) > 20000) {
+    // Wenn die Zeit um mehr als 20000us "springt" und der letzte vermeindliche NTP-Sync. 
+    // mehr als 5min her ist, könnte es ein erfolgreicher NTP-Request gewesen sein
+    if ((fabs(diff - 1000000) > 20000) && ((now - ntp_lastGoodSync) > 301)) {
         isNTPSync = 1;
         ntp_lastGoodSync = now;
     }
     
     ntp_lastTv = tv;    
     
-    // Zeit-Qualität aus Alter des letzten NTP-Sync. und Jitter ableiten
-    // Wobei die Frage zugelassen ist, warum Jitter ein Kriterium sein soll 
-    // --> keine Ahnung, war nur so ein Bauchgefühl :-)
+    // Zeit-Qualität aus Alter des letzten NTP-Sync. ableiten
     unsigned long age = now - ntp_lastGoodSync;
 
-    if (age < 3600 && ntp_jitter < JITTER_MAX_Q3) {          // letzte ntp-sync älter als 1h und jitter (in Mikrosekunden)
+    if (age < 3600) {                         // letzte ntp-sync älter als 1h
         time_quality = 3; // sehr gut
     }
-    else if (age < 21600 && ntp_jitter < JITTER_MAX_Q2) {    // letzte ntp-sync älter als 6h und jitter (in Mikrosekunden)
+    else if (age < 21600) {                   // letzte ntp-sync älter als 6h
         time_quality = 2; // gut
     }
-    else if (age < 86400) {                                  // letzte ntp-sync älter als 24h
+    else if (age < 43200) {                   // letzte ntp-sync älter als 12h
         time_quality = 1; // ok
     }
     else {
@@ -538,10 +531,8 @@ void update_ntp_quality()
     // diverse Werte/Zustände via MQTT senden
     char mqtt_payload[300];
     sprintf(mqtt_payload, 
-            "nixie jitter=%f,jitterMaxQ3=%d,jitterMaxQ2=%d,diff_1s=%d,quality=%d,isNTPSync=%d,isWLANStatus=%d,isMQTTStatus=%d,isNixieScroll=%d,isLuxValue=%f", 
+            "nixie jitter=%f,diff_1s=%d,quality=%d,isNTPSync=%d,isWLANStatus=%d,isMQTTStatus=%d,isNixieScroll=%d,isLuxValue=%f", 
             ntp_jitter,
-            JITTER_MAX_Q3,
-            JITTER_MAX_Q2, 
             (diff-1000000), 
             time_quality,
             isNTPSync,
@@ -651,7 +642,7 @@ void loop()
     if (tm.tm_sec != old_second) {
         old_second = tm.tm_sec;
                 
-        // sollen Nixies überhaupt etwas anzeigen (Umgebungshelligkeit ausreichend bzw. via MQTT ausgeschaltet)
+        // sollen Nixies überhaupt etwas anzeigen (Umgebungshelligkeit ausreichend bzw. via MQTT nicht ausgeschaltet)
         if (is_dark || (display_mode == DISPLAY_OFF)) {
             // ...nein...
             nixie_off();
